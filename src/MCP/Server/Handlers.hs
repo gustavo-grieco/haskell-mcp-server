@@ -62,6 +62,7 @@ getMessageSummary (JsonRpcMessageResponse resp) =
 validateProtocolVersion :: Text -> Either Text Text
 validateProtocolVersion clientVersion
   | clientVersion == protocolVersion = Right protocolVersion  -- Exact match (2025-06-18)
+  | clientVersion == "2025-11-25" = Right "2025-06-18"        -- Downgrade to latest version
   | clientVersion == "2025-06-18" = Right "2025-06-18"        -- Accept latest version
   | clientVersion == "2025-03-26" = Right "2025-03-26"        -- Accept previous version
   | clientVersion == "2024-11-05" = Right "2024-11-05"        -- Accept legacy version
