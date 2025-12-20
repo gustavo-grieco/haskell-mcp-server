@@ -68,7 +68,7 @@ transportRunHttp config serverInfo handlers = do
                  Warp.setPort (httpPort config) $
                  Warp.defaultSettings
 
-  putStrLn $ "Starting MCP HTTP server on " ++ httpHost config ++ ":" ++ show (httpPort config) ++ httpEndpoint config
+  --putStrLn $ "Starting MCP HTTP server on " ++ httpHost config ++ ":" ++ show (httpPort config) ++ httpEndpoint config
   Warp.runSettings settings (mcpApplication config serverInfo handlers)
 
 -- | WAI Application for MCP over HTTP
