@@ -86,24 +86,34 @@ mcpApplication config serverInfo handlers req respond = do
 handleMcpRequest :: HttpConfig -> McpServerInfo -> McpServerHandlers IO -> Wai.Request -> (Wai.Response -> IO Wai.ResponseReceived) -> IO Wai.ResponseReceived
 handleMcpRequest config serverInfo handlers req respond = do
   case Wai.requestMethod req of
-    -- GET requests for endpoint discovery
-    "GET" -> do
-      let discoveryResponse = object
-            [ "name" .= serverName serverInfo
-            , "version" .= serverVersion serverInfo
-            , "description" .= serverInstructions serverInfo
-            , "protocolVersion" .= protocolVersion
-            , "capabilities" .= object
-                [ "tools" .= object []
-                , "prompts" .= object []
-                , "resources" .= object []
+    -- GET requests: MCP clients issue GET to open a server->client SSE stream
+    -- (Accept: text/event-stream). This server is request/response only, so per
+    -- the Streamable HTTP spec we return 405 to signal "no server stream"
+    -- (clients such as Codex's rmcp then proceed without it). Plain GETs still
+    -- get a small discovery document for convenience.
+    "GET"
+      | maybe False ("text/event-stream" `BS.isInfixOf`) (lookup hAccept (Wai.requestHeaders req)) ->
+          respond $ Wai.responseLBS
+            status405
+            [("Content-Type", "text/plain"), ("Allow", "POST, OPTIONS")]
+            "This server does not provide a server-initiated SSE stream"
+      | otherwise -> do
+          let discoveryResponse = object
+                [ "name" .= serverName serverInfo
+                , "version" .= serverVersion serverInfo
+                , "description" .= serverInstructions serverInfo
+                , "protocolVersion" .= protocolVersion
+                , "capabilities" .= object
+                    [ "tools" .= object []
+                    , "prompts" .= object []
+                    , "resources" .= object []
+                    ]
                 ]
-            ]
-      logVerbose config $ "Sending server discovery response: " ++ show discoveryResponse
-      respond $ Wai.responseLBS
-        status200
-        [("Content-Type", "application/json"), ("Access-Control-Allow-Origin", "*")]
-        (encode discoveryResponse)
+          logVerbose config $ "Sending server discovery response: " ++ show discoveryResponse
+          respond $ Wai.responseLBS
+            status200
+            [("Content-Type", "application/json"), ("Access-Control-Allow-Origin", "*")]
+            (encode discoveryResponse)
 
     -- POST requests for JSON-RPC messages
     "POST" -> do
@@ -168,10 +178,13 @@ handleSingleJsonRpc config serverInfo handlers clientProtocolVersion jsonValue r
 
         Nothing -> do
           logVerbose config $ "No response needed for: " ++ show (getMessageSummary message)
-          -- For notifications, return 200 with empty JSON object (per MCP spec)
-          respond $ Wai.responseLBS 
-            status200 
-            (mcpResponseHeaders clientProtocolVersion)
-            "{}"
+          -- Notification / response-only POST: per the MCP Streamable HTTP spec
+          -- the server MUST return 202 Accepted with NO body. Returning 200 with a
+          -- "{}" body makes strict clients (e.g. the rmcp client used by Codex)
+          -- fail to deserialize the response and drop the connection.
+          respond $ Wai.responseLBS
+            status202
+            [("Access-Control-Allow-Origin", "*")]
+            ""
 
 
